@@ -10,14 +10,14 @@
 
 #include <stdint.h>
 
+
 void GUI_init(void);
 
 void GUI_locked(void);
-void GUI_kirby(void);
 void GUI_unlocked(void);
 void GUI_update_password_init(void);
 void GUI_update_password(uint8_t *password);
 void GUI_update_password_success(void);
-void GUI_display_key(char key, uint8_t x, uint8_t y);
+
 
 #endif /* INC_GUI_H_ */

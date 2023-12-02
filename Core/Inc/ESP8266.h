@@ -1,14 +1,12 @@
 /*
- * ESP8266.h
+ * esp8266.h
  *
  *  Created on: Nov 26, 2023
- *      Author: ANDRES CUELLAR
+ *      Author: braya
  */
 
 #ifndef INC_ESP8266_H_
 #define INC_ESP8266_H_
-
-
 #include <stdint.h>
 
 typedef struct {
@@ -24,6 +22,5 @@ typedef struct {
 void Rx_USART1_init(USART1_t *ring_buffer, uint8_t *buffer, uint16_t capacity);
 uint8_t Rx_USART1_put(USART1_t *ring_buffer, uint8_t data);
 void Rx_USART1(USART1_t *ring_buffer);
-
 
 #endif /* INC_ESP8266_H_ */
