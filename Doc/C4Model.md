@@ -17,4 +17,17 @@ The STM32 runs a [controller-model-view](https://en.wikipedia.org/wiki/Model%E2%
 ![context](structurizr-Component.png)
 
 ## Code Diagram
-*TODO:* Add the code diagrams here.
+Here is more detailed explanation of how the libraries interects with each other.
+
+#### General Diagram of libraries
+![context](structurizr-SystemLandscape-001 (1).png)
+
+#### Specific Diagram of libraries
+![context](structurizr-SystemContext-001.png)
+
+
+![context](structurizr-SystemContext-002.png)
+![context](structurizr-SystemContext-003.png)
+![context](structurizr-SystemContext-004.png)
+![context](structurizr-SystemContext-006.png)
+![context](structurizr-SystemContext-007.png)
