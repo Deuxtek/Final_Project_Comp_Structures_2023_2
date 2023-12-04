@@ -20,7 +20,7 @@ The STM32 runs a [controller-model-view](https://en.wikipedia.org/wiki/Model%E2%
 Here is more detailed explanation of how the libraries interects with each other.
 
 #### General Diagram of libraries
-![context](structurizr-SystemLandscape-001(1).png)
+![context](structurizr-SystemLandscape-0012.png)
 
 #### Specific Diagram of libraries
 ![context](structurizr-SystemContext-001.png)
