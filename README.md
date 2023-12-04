@@ -20,7 +20,7 @@ This project integrates multiple technologies to create a versatile access contr
 * HC-SR04 ultrasonic sensor for presence detection.
 * Buzzer for audible alerts in Morse code.
 * LED to simulate the status of the lock actuator.
-*  See more details in the [C4Model](Doc/C4Model.md) The following is the pinout of the STM32: ![pinout](Doc/pinout2.png)
+*  See more details in the [C4Model](Doc/C4Model.md) The following is the pinout of the STM32: ![pinout](Doc/pinout2.jpg)
 
 
 
