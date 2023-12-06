@@ -22,11 +22,14 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include <stdio.h>
+#include <string.h>
 
 #include "lock.h"
 #include "keypad.h"
 #include "ring_buffer.h"
-#include "esp8266.h"
+#include "hc_sr04.h"
+#include "PWM_cont.h"
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -36,6 +39,8 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+// Estas variables deben ser globales o accesibles desde main
+
 
 /* USER CODE END PD */
 
@@ -49,21 +54,26 @@ I2C_HandleTypeDef hi2c1;
 
 RTC_HandleTypeDef hrtc;
 
+TIM_HandleTypeDef htim3;
+DMA_HandleTypeDef hdma_tim3_ch4_up;
+
 /* USER CODE BEGIN PV */
 volatile uint16_t keypad_event = KEYPAD_EVENT_NONE;
-uint8_t message[5];
-USART1_t Rx_Data;
 
+//uint8_t message_[5];
+//ring_buffer_t Rx_Data_;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
+static void MX_DMA_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_I2C1_Init(void);
 static void MX_USART1_UART_Init(void);
 static void MX_RTC_Init(void);
 static void MX_TIM2_Init(void);
+static void MX_TIM3_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -89,11 +99,24 @@ void keypad_it_callback(uint16_t pin)
 {
 	keypad_event = pin;
 }
+/*
+void Rx_USART1_(ring_buffer_t *ring_buffer) {
+    if (LL_USART_IsActiveFlag_RXNE(USART1)) {
+        uint8_t received_data = LL_USART_ReceiveData8(USART1);
+        ring_buffer_put(ring_buffer, received_data);
+        printf("data %x \r\n", received_data);
+
+    if(ring_buffer_is_full(ring_buffer)){
+    	ring_buffer_reset(&Rx_Data_);
+    	memset(message_,0,sizeof(message_));
+    }
+    }
+}*/
 /* USER CODE END 0 */
 
 /**
   * @brief  The application entry point.
-  * @retval int
+  * @ret1val int
   */
 int main(void)
 {
@@ -119,29 +142,93 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+  MX_DMA_Init();
   MX_USART2_UART_Init();
   MX_I2C1_Init();
   MX_USART1_UART_Init();
   MX_RTC_Init();
   MX_TIM2_Init();
+  MX_TIM3_Init();
   /* USER CODE BEGIN 2 */
   lock_init();
+
   keypad_init();
 
-  //ring_buffer_init(&Rx_Data, message, 5);
-  Rx_USART1_init(&Rx_Data, message, 5);
+
+  HC_SR04_Init();  // Initialize the sensor HC-SR04
+  LL_TIM_EnableCounter(TIM3); // Initialize the sensor TIM3
+
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+
   printf("Started\r\n");
+  // Variables to track the state of the LED and the last time it changed
+
+  uint32_t lastLedChangeTime = 0;
+  uint8_t ledIsOn = 0;
+
   while (1)
   {
-	  uint8_t key_pressed = keypad_run(&keypad_event);
-	  if (key_pressed != KEY_PRESSED_NONE) {
-		  lock_sequence_handler(key_pressed);
-	  }
-	  Rx_USART1(&Rx_Data);
+
+	  Rx_USART1(); // Receive data from USART1
+
+	  // Check if there is a flag indicating received data
+	  uint8_t flag = Flag_USART1();
+	  if (flag==1) {
+		  lock_sequence();  // Handle the received data sequence
+	}
+
+	  // Get the current system tick
+	  uint32_t currentTime = HAL_GetTick();
+
+	  // Handle keypad input and lock control
+	      uint8_t key_pressed = keypad_run(&keypad_event);
+	      if (key_pressed != KEY_PRESSED_NONE) {
+
+	          lock_sequence_handler(key_pressed); // Handle the sequence for lock based on the key pressed
+
+	          lock_control_ultrasonic_sensor(key_pressed); // Control ultrasonic sensor based on the key pressed
+	      }
+
+
+	      // Handle ultrasonic sensor readings
+	      if (ultrasonicSensorEnabled == 1) {
+
+	           uint32_t distance = HC_SR04_Read(); // Read distance from ultrasonic sensor
+
+
+	           // Handle LED based on distance readings
+			  if (distance > 0) {
+				  printf("Distancia: %lu cm\r\n", distance);
+				  if (distance <= 30 && !ledIsOn) {
+					  LL_GPIO_SetOutputPin(LD2_GPIO_Port, LD2_Pin); // Turn on LED
+					  ledIsOn = 1;
+					  PWM_SendSOS(); // Send SOS signal using PWM
+					  lastLedChangeTime = currentTime;
+				  } else if (distance > 30 && ledIsOn) {
+					  LL_GPIO_ResetOutputPin(LD2_GPIO_Port, LD2_Pin); // Turn off LED
+					  ledIsOn = 0;
+					  lastLedChangeTime = currentTime;
+				  }
+			  } else {
+				  printf("Error en la lectura del sensor\r\n");
+				  LL_GPIO_ResetOutputPin(LD2_GPIO_Port, LD2_Pin); // Ensure LED is off in case of sensor error
+				  ledIsOn = 0;
+				  lastLedChangeTime = currentTime;
+			  }
+
+	      }
+
+
+
+	      PWM_Morse_Update(); // Update Morse code generation based on PWM
+
+
+	      HAL_Delay(100);// Delay to manage loop execution speed and relieve the memory.
+
 
     /* USER CODE END WHILE */
 
@@ -392,6 +479,51 @@ static void MX_TIM2_Init(void)
 }
 
 /**
+  * @brief TIM3 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM3_Init(void)
+{
+
+  /* USER CODE BEGIN TIM3_Init 0 */
+
+  /* USER CODE END TIM3_Init 0 */
+
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+  /* USER CODE BEGIN TIM3_Init 1 */
+
+  /* USER CODE END TIM3_Init 1 */
+  htim3.Instance = TIM3;
+  htim3.Init.Prescaler = 79;
+  htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim3.Init.Period = 65535;
+  htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
+  if (HAL_TIM_Base_Init(&htim3) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim3, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim3, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM3_Init 2 */
+
+  /* USER CODE END TIM3_Init 2 */
+
+}
+
+/**
   * @brief USART1 Initialization Function
   * @param None
   * @retval None
@@ -498,10 +630,6 @@ static void MX_USART2_UART_Init(void)
   GPIO_InitStruct.Alternate = LL_GPIO_AF_7;
   LL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
-  /* USART2 interrupt Init */
-  NVIC_SetPriority(USART2_IRQn, NVIC_EncodePriority(NVIC_GetPriorityGrouping(),0, 0));
-  NVIC_EnableIRQ(USART2_IRQn);
-
   /* USER CODE BEGIN USART2_Init 1 */
 
   /* USER CODE END USART2_Init 1 */
@@ -518,6 +646,22 @@ static void MX_USART2_UART_Init(void)
   /* USER CODE BEGIN USART2_Init 2 */
 
   /* USER CODE END USART2_Init 2 */
+
+}
+
+/**
+  * Enable DMA controller clock
+  */
+static void MX_DMA_Init(void)
+{
+
+  /* DMA controller clock enable */
+  __HAL_RCC_DMA1_CLK_ENABLE();
+
+  /* DMA interrupt init */
+  /* DMA1_Channel3_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Channel3_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Channel3_IRQn);
 
 }
 
@@ -539,7 +683,7 @@ static void MX_GPIO_Init(void)
   LL_AHB2_GRP1_EnableClock(LL_AHB2_GRP1_PERIPH_GPIOB);
 
   /**/
-  LL_GPIO_ResetOutputPin(GPIOA, LD2_Pin|ROW_1_Pin);
+  LL_GPIO_ResetOutputPin(GPIOA, Trigger_Pin|LD2_Pin|ROW_1_Pin);
 
   /**/
   LL_GPIO_ResetOutputPin(GPIOB, ROW_2_Pin|ROW_4_Pin|ROW_3_Pin);
@@ -630,12 +774,18 @@ static void MX_GPIO_Init(void)
   LL_GPIO_SetPinMode(COL_3_GPIO_Port, COL_3_Pin, LL_GPIO_MODE_INPUT);
 
   /**/
-  GPIO_InitStruct.Pin = LD2_Pin|ROW_1_Pin;
+  GPIO_InitStruct.Pin = Trigger_Pin|LD2_Pin|ROW_1_Pin;
   GPIO_InitStruct.Mode = LL_GPIO_MODE_OUTPUT;
   GPIO_InitStruct.Speed = LL_GPIO_SPEED_FREQ_LOW;
   GPIO_InitStruct.OutputType = LL_GPIO_OUTPUT_PUSHPULL;
   GPIO_InitStruct.Pull = LL_GPIO_PULL_NO;
   LL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+  /**/
+  GPIO_InitStruct.Pin = Echo_Pin;
+  GPIO_InitStruct.Mode = LL_GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = LL_GPIO_PULL_NO;
+  LL_GPIO_Init(Echo_GPIO_Port, &GPIO_InitStruct);
 
   /**/
   GPIO_InitStruct.Pin = ROW_2_Pin|ROW_4_Pin|ROW_3_Pin;
@@ -652,6 +802,17 @@ static void MX_GPIO_Init(void)
   NVIC_EnableIRQ(EXTI15_10_IRQn);
 
 /* USER CODE BEGIN MX_GPIO_Init_2 */
+
+  // Configuración del pin del LED con LL
+
+    LL_AHB2_GRP1_EnableClock(LL_AHB2_GRP1_PERIPH_GPIOA); // Activar el reloj para GPIOA
+
+    GPIO_InitStruct.Pin = LD2_Pin; // Asegúrate de que LD2_Pin esté definido correctamente
+    GPIO_InitStruct.Mode = LL_GPIO_MODE_OUTPUT;
+    GPIO_InitStruct.Speed = LL_GPIO_SPEED_FREQ_LOW;
+    GPIO_InitStruct.OutputType = LL_GPIO_OUTPUT_PUSHPULL;
+    GPIO_InitStruct.Pull = LL_GPIO_PULL_NO;
+    LL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 /* USER CODE END MX_GPIO_Init_2 */
 }
 
